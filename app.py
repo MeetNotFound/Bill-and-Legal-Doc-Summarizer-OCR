@@ -12,15 +12,13 @@ st.set_page_config(page_title="Summify AI", layout="wide")
 st.title("Summify AI - Document & Image Summarizer")
 
 # ==============================
-# Load Model + Tokenizer from Hugging Face
+# Load Model + Tokenizer from Hugging Face (Public)
 # ==============================
 @st.cache_resource
 def load_model():
-    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"
-    HF_TOKEN = os.environ.get("HF_TOKEN")  # must be set in Streamlit Secrets
-
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_HF_REPO, use_auth_token=HF_TOKEN)
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_HF_REPO, use_auth_token=HF_TOKEN)
+    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"  # Public repo
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_HF_REPO)
+    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_HF_REPO)
     return tokenizer, model
 
 with st.spinner("Loading model from Hugging Face..."):
@@ -55,7 +53,7 @@ def extract_text_from_image(uploaded_image):
     return text.strip()
 
 def summarize_text(text):
-    """Summarize extracted text using Hugging Face model"""
+    """Summarize extracted text using your Hugging Face model"""
     inputs = tokenizer(text, max_length=1024, truncation=True, return_tensors="pt")
     summary_ids = model.generate(
         **inputs,
@@ -70,11 +68,7 @@ def summarize_text(text):
 # ==============================
 # File Uploader
 # ==============================
-uploaded_file = st.file_uploader(
-    "Upload a PDF or Image",
-    type=["pdf", "png", "jpg", "jpeg"],
-    help="Limit 200MB per file"
-)
+uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
     with st.spinner("Processing file..."):
