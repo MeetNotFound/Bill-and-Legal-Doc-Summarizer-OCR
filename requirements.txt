@@ -4,4 +4,5 @@ torch
 pillow
 pytesseract
 pdf2image
+easyocr
 PyPDF2
