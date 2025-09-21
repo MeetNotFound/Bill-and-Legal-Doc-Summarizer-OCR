@@ -1,9 +1,9 @@
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from PIL import Image
-import pytesseract
 import tempfile
 import os
+import easyocr
 
 # ==============================
 # App Config
@@ -12,11 +12,11 @@ st.set_page_config(page_title="Summify AI", layout="wide")
 st.title("Summify AI - Document & Image Summarizer")
 
 # ==============================
-# Load Model + Tokenizer from Hugging Face (Public)
+# Load Hugging Face Model
 # ==============================
 @st.cache_resource
 def load_model():
-    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"  # Public repo
+    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"
     tokenizer = AutoTokenizer.from_pretrained(MODEL_HF_REPO)
     model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_HF_REPO)
     return tokenizer, model
@@ -26,16 +26,21 @@ with st.spinner("Loading model from Hugging Face..."):
 st.success("Model loaded successfully!")
 
 # ==============================
+# Initialize EasyOCR reader
+# ==============================
+reader = easyocr.Reader(['en'])
+
+# ==============================
 # Helper Functions
 # ==============================
 def extract_text_from_pdf(uploaded_pdf):
     """Extract text from PDF using PyPDF2"""
+    import PyPDF2
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     temp_file.write(uploaded_pdf.read())
     temp_file.flush()
 
-    from PyPDF2 import PdfReader
-    pdf_reader = PdfReader(temp_file.name)
+    pdf_reader = PyPDF2.PdfReader(temp_file.name)
     text = ""
     for page in pdf_reader.pages:
         page_text = page.extract_text()
@@ -47,13 +52,15 @@ def extract_text_from_pdf(uploaded_pdf):
     return text.strip()
 
 def extract_text_from_image(uploaded_image):
-    """Extract text from image using pytesseract OCR"""
-    image = Image.open(uploaded_image)
-    text = pytesseract.image_to_string(image)
-    return text.strip()
+    """Extract text from image using EasyOCR"""
+    image = Image.open(uploaded_image).convert('RGB')
+    import numpy as np
+    image_np = np.array(image)
+    result = reader.readtext(image_np, detail=0)
+    return "\n".join(result)
 
 def summarize_text(text):
-    """Summarize extracted text using your Hugging Face model"""
+    """Summarize extracted text using Hugging Face model"""
     inputs = tokenizer(text, max_length=1024, truncation=True, return_tensors="pt")
     summary_ids = model.generate(
         **inputs,
@@ -73,7 +80,7 @@ uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "j
 if uploaded_file is not None:
     with st.spinner("Processing file..."):
         if uploaded_file.type == "application/pdf":
-            st.write("**PDF detected — extracting text**")
+            st.write("**PDF detected — extracting text directly**")
             extracted_text = extract_text_from_pdf(uploaded_file)
 
         elif uploaded_file.type.startswith("image/"):
