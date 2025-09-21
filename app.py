@@ -1,9 +1,10 @@
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from PIL import Image
-import pytesseract
 import tempfile
 import os
+import easyocr
+import numpy as np
 
 # ==============================
 # App Config
@@ -12,11 +13,11 @@ st.set_page_config(page_title="Summify AI", layout="wide")
 st.title("Summify AI - Document & Image Summarizer")
 
 # ==============================
-# Load Model + Tokenizer from Hugging Face
+# Load Hugging Face Model
 # ==============================
 @st.cache_resource
 def load_model():
-    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"  # your HF repo
+    MODEL_HF_REPO = "MeetNotFound/Bill-and-Legal-Doc-Summarizer"
     tokenizer = AutoTokenizer.from_pretrained(MODEL_HF_REPO)
     model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_HF_REPO)
     return tokenizer, model
@@ -26,16 +27,21 @@ with st.spinner("Loading model from Hugging Face..."):
 st.success("Model loaded successfully!")
 
 # ==============================
+# Initialize EasyOCR reader
+# ==============================
+reader = easyocr.Reader(['en'])
+
+# ==============================
 # Helper Functions
 # ==============================
 def extract_text_from_pdf(uploaded_pdf):
-    """Extract text from PDF using PyPDF2."""
+    """Extract text from PDF using PyPDF2"""
+    import PyPDF2
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     temp_file.write(uploaded_pdf.read())
     temp_file.flush()
 
-    from PyPDF2 import PdfReader
-    pdf_reader = PdfReader(temp_file.name)
+    pdf_reader = PyPDF2.PdfReader(temp_file.name)
     text = ""
     for page in pdf_reader.pages:
         page_text = page.extract_text()
@@ -47,13 +53,14 @@ def extract_text_from_pdf(uploaded_pdf):
     return text.strip()
 
 def extract_text_from_image(uploaded_image):
-    """Extract text from image using pytesseract OCR."""
-    image = Image.open(uploaded_image)
-    text = pytesseract.image_to_string(image)
-    return text.strip()
+    """Extract text from image using EasyOCR"""
+    image = Image.open(uploaded_image).convert('RGB')
+    image_np = np.array(image)
+    result = reader.readtext(image_np, detail=0)
+    return "\n".join(result)
 
 def chunk_text(text, max_words=500):
-    """Split text into chunks to avoid tokenizer truncation."""
+    """Split text into chunks to avoid tokenizer truncation"""
     words = text.split()
     chunks = []
     for i in range(0, len(words), max_words):
@@ -61,15 +68,15 @@ def chunk_text(text, max_words=500):
     return chunks
 
 def summarize_text(text):
-    """Summarize large text by chunking."""
-    chunks = chunk_text(text, max_words=500)  # adjust chunk size if needed
+    """Summarize extracted text using Hugging Face model with chunking"""
+    chunks = chunk_text(text, max_words=500)
     summaries = []
 
     for chunk in chunks:
         inputs = tokenizer(chunk, max_length=1024, truncation=True, return_tensors="pt")
         summary_ids = model.generate(
             **inputs,
-            max_length=150,   # adjust summary length if needed
+            max_length=150,
             min_length=30,
             length_penalty=2.0,
             num_beams=4,
@@ -77,7 +84,6 @@ def summarize_text(text):
         )
         summaries.append(tokenizer.decode(summary_ids[0], skip_special_tokens=True))
 
-    # Combine all chunk summaries
     final_summary = " ".join(summaries)
     return final_summary
 
@@ -89,7 +95,7 @@ uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "j
 if uploaded_file is not None:
     with st.spinner("Processing file..."):
         if uploaded_file.type == "application/pdf":
-            st.write("**PDF detected — extracting text without OCR**")
+            st.write("**PDF detected — extracting text directly**")
             extracted_text = extract_text_from_pdf(uploaded_file)
 
         elif uploaded_file.type.startswith("image/"):
@@ -109,4 +115,4 @@ if uploaded_file is not None:
                 with st.spinner("Generating summary..."):
                     summary = summarize_text(extracted_text)
                 st.success("Summary Generated!")
-                st.text_area("Summary", summary, height=300)
+                st.text_area("Summary", summary, height=200)
